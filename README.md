@@ -10,6 +10,9 @@
        + [YouCompleteMe unavailable](http://stackoverflow.com/questions/39896698/youcompleteme-unavailable-requires-vim-7-4-143)
        + [gnome-256color not known](https://github.com/avelino/vim-bootstrap/issues/18)
  + cpputest
+   + troubleshooting
+     + export CPPUTEST_HOME
+     + execute install scripts in CPPUTEST_HOME
        
 ## Goal
 
