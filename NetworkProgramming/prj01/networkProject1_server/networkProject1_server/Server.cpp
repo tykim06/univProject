@@ -1,3 +1,7 @@
+// 2017년 1학기 네트워크프로그래밍 숙제 1번 서버
+
+// 성명: 김태엽 학번: 092262
+
 #pragma comment(lib, "ws2_32")
 #include <winsock2.h>
 #include <stdlib.h>
@@ -151,6 +155,13 @@ int main(int argc, char *argv[])
 			else if(retval == 0)
 				break;
 
+			if(!strncmp(buf, "exit", 4)) {
+				closesocket(client_sock);
+				closesocket(listen_sock);
+				WSACleanup();
+				return 0;
+			}
+
 			// 받은 데이터 출력
 			buf[retval] = '\0';
 			printf("[TCP/%s:%d] %s\n", inet_ntoa(clientaddr.sin_addr),
@@ -180,10 +191,5 @@ int main(int argc, char *argv[])
 			inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
 	}
 
-	// closesocket()
-	closesocket(listen_sock);
-
-	// 윈속 종료
-	WSACleanup();
 	return 0;
 }

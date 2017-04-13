@@ -1,3 +1,9 @@
+// 2017년 1학기 네트워크프로그래밍 숙제 1번 클라이언트
+
+// 성명: 김태엽 학번: 092262
+
+// 작동하는 도메인 네임: www.sejong.ac.kr, www.google.com, www.nate.com
+
 #pragma comment(lib, "ws2_32")
 #include <winsock2.h>
 #include <stdlib.h>
@@ -84,8 +90,6 @@ int main(int argc, char *argv[])
 		printf("Enter Domain : ");
 		scanf("%s", buf);
 
-		if(!strcmp(buf, "exit")) break;
-
 		// 데이터 입력(시뮬레이션)
 		len = strlen(buf);
 
@@ -102,6 +106,8 @@ int main(int argc, char *argv[])
 			err_display("send()");
 			break;
 		}
+
+		if(!strcmp(buf, "exit")) break;
 
 		// 데이터 받기(고정 길이)
 		retval = recvn(sock, (char *)&len, sizeof(int), 0);
