@@ -33,7 +33,7 @@ INCLUDE_DIRS =\
   $(CPPUTEST_HOME)/include/Platforms/Gcc\
   mocks \
 
-CPPUTEST_WARNINGFLAGS = -Wall -Werror -Wswitch-default 
+CPPUTEST_WARNINGFLAGS = -Wall -Wno-error -Wswitch-default 
 CPPUTEST_WARNINGFLAGS += -Wconversion -Wswitch-enum 
 
 include $(CPPUTEST_HOME)/build/MakefileWorker.mk
