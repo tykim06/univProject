@@ -6,7 +6,7 @@
  + vim
    + basic vim plugin : download [.vimrc](http://www.vim-bootstrap.com/)
      + pre-pared package : sudo apt-get install git exuberant-ctags ncurses-term curl
-     + troubleshooting
+     + troubleshooting
        + syntastic need include path
          + add .syntastic_c_config, .syntastic_cpp_config to root project directory
          + add text '-I(include path)', e.g. '-Iinclude/string/'
