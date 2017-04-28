@@ -12,8 +12,8 @@
          + add text '-I(include path)', e.g. '-Iinclude/string/'
        + syntastic gcc version
          + vi ~/vimrc
-         + let g:syntastic_cpp_compiler = 'clang++'
-         + let g:syntastic_cpp_compiler_options = ' -std=c++11 -stdlib=libc++'
+         + let g:syntastic_cpp_compiler = "g++"
+         + let g:syntastic_cpp_compiler_options = "-std=c++11 -Wall -Wextra -Wpedantic"
      + ~~autocomplete plugin : [YCM](http://valloric.github.io/YouCompleteMe/#ubuntu-linux-x64)(YouCompleteMe)~~
      + ~~troubleshooting~~
        + ~~[YouCompleteMe unavailable](http://stackoverflow.com/questions/39896698/youcompleteme-unavailable-requires-vim-7-4-143)~~
