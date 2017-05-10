@@ -42,6 +42,6 @@ TEST(hw3, Return_Calculate_Mul_Result) {
 }
 
 TEST(hw3, Return_Calculate_Div_Result) {
-    float f = calculator(2, '/', 3);
+    float f = calculator(3, '/', 2);
     CHECK_EQUAL(3.0/2, f);
 }

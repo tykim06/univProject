@@ -17,7 +17,7 @@ float calculator(int a, char c, int b) {
     } else if(c == '*') {
         return (float)(a * b);
     } else {
-        return (float)b / a;
+        return (float)a / b;
     }
     return 3.0;
 }
