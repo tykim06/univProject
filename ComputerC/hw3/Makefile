@@ -12,13 +12,15 @@ CPPUTEST_HOME = ~/dev/cpputest
 CPP_PLATFORM = Gcc
 
 SRC_DIRS = \
+	.\
     src\
     src/*
 
-# to pick specific files (rather than directories) use this:    
-SRC_FILES = 
+# to pick specific files (rather than directories) use this:
+SRC_FILES =
 
 TEST_SRC_DIRS = \
+	.\
     tests \
     tests/*
 
@@ -33,8 +35,8 @@ INCLUDE_DIRS =\
   $(CPPUTEST_HOME)/include/Platforms/Gcc\
   mocks
 
-CPPUTEST_WARNINGFLAGS = -Wall -Werror -Wswitch-default 
-CPPUTEST_WARNINGFLAGS += -Wconversion -Wswitch-enum 
+CPPUTEST_WARNINGFLAGS = -Wall -Wswitch-default
+CPPUTEST_WARNINGFLAGS += -Wconversion -Wswitch-enum
 
 include $(CPPUTEST_HOME)/build/MakefileWorker.mk
 

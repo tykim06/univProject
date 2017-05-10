@@ -1,5 +1,5 @@
-#ifndef D_hw3_1_H
-#define D_hw3_1_H
+#ifndef D_hw3_H
+#define D_hw3_H
 
 /**********************************************************
  *
@@ -8,5 +8,5 @@
  **********************************************************/
 
 int get_max_power(int N);
-
+float calculator(int a, char c, int b);
 #endif  /* D_Fakehw3_1_H */
