@@ -10,6 +10,10 @@
        + syntastic need include path
          + add .syntastic_c_config, .syntastic_cpp_config to root project directory
          + add text '-I(include path)', e.g. '-Iinclude/string/'
+       + syntastic gcc version
+         + vi ~/vimrc
+         + let g:syntastic_cpp_compiler = "g++"
+         + let g:syntastic_cpp_compiler_options = "-std=c++11 -Wall -Wextra -Wpedantic"
      + ~~autocomplete plugin : [YCM](http://valloric.github.io/YouCompleteMe/#ubuntu-linux-x64)(YouCompleteMe)~~
      + ~~troubleshooting~~
        + ~~[YouCompleteMe unavailable](http://stackoverflow.com/questions/39896698/youcompleteme-unavailable-requires-vim-7-4-143)~~
