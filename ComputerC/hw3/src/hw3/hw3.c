@@ -21,3 +21,10 @@ float calculator(int a, char c, int b) {
     }
     return 3.0;
 }
+
+void get_reversed_string(char *base, char *reversed, int length) {
+    int i = length;
+    while(i--) {
+        reversed[i] = base[length - i - 1];
+    }
+}
