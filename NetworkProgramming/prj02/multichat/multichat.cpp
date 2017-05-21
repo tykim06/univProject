@@ -13,27 +13,13 @@
 
 host_info_t host_info;
 
+bool is_enter_mode;
 bool is_overlap_mode;
-char overlap_list[50][CHAR_BUFSIZE];
-char overlap_list_count;
+char overlap_user_list[10][CHAR_BUFSIZE];
+unsigned int overlap_user_list_count;
 
-static void sys_cmd_set_host_ip(char *name, char *ip);
-static void sys_cmd_overlap_mode(char *name, char *resv);
-static const sys_cmd_t sys_cmd[] = {
-	{":enter", sys_cmd_set_host_ip},
-	{":overlap", sys_cmd_overlap_mode},
-	{"",0}
-};
-
-static void user_cmd_print_help(void);
-static void user_cmd_set_nick_name(void);
-static void user_cmd_exit(void);
-static const user_cmd_t user_cmd[] = {
-	{":help", user_cmd_print_help, "show command list"},
-	{":setNickName", user_cmd_set_nick_name, "set nick name"},
-	{":exit", user_cmd_exit, "exit application"},
-	{"",0,""}
-};
+static char recv_name[CHAR_BUFSIZE];
+static char *recv_ip_addr;
 
 // 소켓 함수 오류 출력 후 종료
 void err_quit(char *msg)
@@ -103,19 +89,59 @@ static int chat_sock_recv(char *buf, int *length) {
 	return retval;
 }
 
-static void sys_cmd_set_host_ip(char *name, char *ip) {
-	host_info_set_host_ip(name, ip);
-}
+static void sys_cmd_enter_user(void);
+static void sys_cmd_overlap_user(void);
+static void sys_cmd_rename(void);
+static const sys_cmd_t sys_cmd[] = {
+	{":enter", sys_cmd_enter_user},
+	{":overlap", sys_cmd_overlap_user},
+	{":rename", sys_cmd_rename},
+	{"",0}
+};
 
-static void sys_cmd_overlap_mode(char *name, char *resv) {
-	if(strcmp(host_info_get_p_name(), name) == 0) {
-		is_overlap_mode = true;
-		printf("sys_cmd_overlap_mode1\n");
-	} else  {
-		strcpy(&overlap_list[overlap_list_count++][0], name);
-		printf("sys_cmd_overlap_mode2\n");
+static void sys_cmd_enter_user(void) {
+	if(host_info_is_equal_name(recv_name)) {
+		if(!is_enter_mode) {
+			is_enter_mode = true;
+		}
+		else {
+			chat_sock.send(":overlap");
+		}
 	}
 }
+
+static void sys_cmd_overlap_user(void) {
+	if(host_info_is_equal_name(recv_name)) {
+		printf("\n\nChange Name by Entering :setName\n\n");
+		is_overlap_mode = true;
+	} else  {
+		strcpy(&overlap_user_list[overlap_user_list_count++][0], recv_name);
+	}
+}
+
+static void sys_cmd_rename(void) {
+	if(host_info_is_equal_name(recv_name)) {
+		is_overlap_mode = false;
+	} else  {
+		for(unsigned int i=0;i<overlap_user_list_count;i++) {
+			if(strcmp(&overlap_user_list[i][0], recv_name) == 0) {
+				strcpy(&overlap_user_list[i][0], &overlap_user_list[overlap_user_list_count-1][0]);
+				overlap_user_list_count--;
+				return;
+			}
+		}
+	}
+}
+
+static void user_cmd_print_help(void);
+static void user_cmd_set_name(void);
+static void user_cmd_exit(void);
+static const user_cmd_t user_cmd[] = {
+	{":help", user_cmd_print_help, "show command list"},
+	{":setName", user_cmd_set_name, "set name"},
+	{":exit", user_cmd_exit, "exit application"},
+	{"",0,""}
+};
 
 static void user_cmd_print_help(void) {
 	unsigned int i=0;
@@ -127,17 +153,24 @@ static void user_cmd_print_help(void) {
 	printf("\n");
 }
 
-static void user_cmd_set_nick_name(void) {
-	char temp_nick_name[CHAR_BUFSIZE];
+static void user_cmd_set_name(void) {
+	char temp_name[CHAR_BUFSIZE];
 	printf("Enter new name : ");
-	while(fgets(temp_nick_name, CHAR_BUFSIZE, stdin) == NULL);
-	temp_nick_name[strlen(temp_nick_name)-1] = '\0';
+	while(fgets(temp_name, CHAR_BUFSIZE, stdin) == NULL);
+	temp_name[strlen(temp_name)-1] = '\0';
+	
+	is_enter_mode = false;
+
+	if(is_overlap_mode) {
+		is_overlap_mode = false;
+		chat_sock.send(":rename");
+	}
 
 	char temp_buf[100];
-	sprintf(temp_buf, "NickName Update[%s > %s]", host_info_get_p_name, temp_nick_name);
-	host_info_set_name(temp_nick_name);
-
+	sprintf(temp_buf, "Name Update[ %s >>> %s ]", host_info_get_p_name(), temp_name);
+	host_info_set_name(temp_name);
 	chat_sock.send(temp_buf);
+	chat_sock.send(":enter");
 }
 
 static void user_cmd_exit(void) {
@@ -151,6 +184,14 @@ static void user_cmd_exit(void) {
 	WSACleanup();
 
 	exit(0);
+}
+
+static bool is_overlap_name(void) {
+	for(unsigned int i=0;i<overlap_user_list_count;i++) {
+		if(strcmp(&overlap_user_list[i][0], recv_name) == 0)
+			return true;
+	}
+	return false;
 }
 
 // 클라이언트와 데이터 통신
@@ -192,14 +233,12 @@ DWORD WINAPI Receiver(LPVOID arg)
 	// 데이터 통신에 사용할 변수
 	int addrlen = sizeof(chat_sock.recv_addr);
 	char buf[BUFSIZE+1];
-	char name[CHAR_BUFSIZE];
-	char *recv_ip_addr;
 
 	// 멀티캐스트 데이터 받기
 	while(1){				
-		retval = chat_sock.recv(name, &addrlen);
+		retval = chat_sock.recv(recv_name, &addrlen);
 		if(retval == SOCKET_ERROR) continue;
-		name[retval] = '\0';
+		recv_name[retval] = '\0';
 
 		retval = chat_sock.recv(buf, &addrlen);
 		if(retval == SOCKET_ERROR) continue;
@@ -208,12 +247,11 @@ DWORD WINAPI Receiver(LPVOID arg)
 		recv_ip_addr = inet_ntoa(chat_sock.recv_addr.sin_addr);
 
 		if(buf[0] == ':') {
-			parse_sys_cmd(buf, name, recv_ip_addr);
-		} else if(host_info_is_overlapped_name(name, recv_ip_addr)) {
-			sprintf(buf, ":overlap %s", host_info_get_p_name());
-			chat_sock.send(buf);
-		} else {
-			printf("[%s][%s] %s\n", name, recv_ip_addr, buf);
+			parse_sys_cmd(buf);
+		} else if(is_overlap_mode && host_info_is_equal_name(recv_name)) {
+			printf("[%s][%s] %s\n", recv_name, recv_ip_addr, buf);
+		} else if(!is_overlap_mode && !is_overlap_name()) {
+			printf("[%s][%s] %s\n", recv_name, recv_ip_addr, buf);
 		}
 	}
 
@@ -221,8 +259,9 @@ DWORD WINAPI Receiver(LPVOID arg)
 }
 
 void overlap_init() {
+	is_enter_mode = false;
 	is_overlap_mode = false;
-	overlap_list_count = 0;
+	overlap_user_list_count = 0;
 }
 
 int main(int argc, char *argv[])

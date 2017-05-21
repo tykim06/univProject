@@ -10,11 +10,11 @@ void chat_cmd_init(const sys_cmd_t *sys_cmd, const user_cmd_t *user_cmd) {
 	p_user_cmd = user_cmd;
 }
 
-void parse_sys_cmd(char *buf, char *data1, char *data2) {
+void parse_sys_cmd(char *buf) {
 	unsigned int i=0;
 	while((p_sys_cmd+i)->execute) {
 		if(strcmp((p_sys_cmd+i)->cmd, buf) == 0) {
-			(p_sys_cmd+i)->execute(data1, data2);
+			(p_sys_cmd+i)->execute();
 			return;
 		}
 		i++;
