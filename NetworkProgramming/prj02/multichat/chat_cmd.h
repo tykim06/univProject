@@ -1,16 +1,17 @@
 #ifndef __CHAT_CMD__
 #define __CHAT_CMD__
 
-typedef void(*chat_cmd_void_fn_type)(void);
+typedef void(*sys_cmd_void_fn_type)(char *);
+typedef void(*user_cmd_void_fn_type)(void);
 
 typedef struct sys_cmd_s {
 	const char *cmd;
-	chat_cmd_void_fn_type execute;
+	sys_cmd_void_fn_type execute;
 }sys_cmd_t;
 
 typedef struct user_cmd_s {
 	const char *cmd;
-	chat_cmd_void_fn_type execute;
+	user_cmd_void_fn_type execute;
 	const char *desc;
 }user_cmd_t;
 
