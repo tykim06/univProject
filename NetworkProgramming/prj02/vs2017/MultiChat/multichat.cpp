@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include "resource.h"
 
-#define EDIT_BUFSIZE 25
 #define BUFSIZE     512
 #define CHAR_BUFSIZE  30
 
@@ -21,54 +20,11 @@ bool is_overlap_mode;
 static char recv_name[CHAR_BUFSIZE];
 static char *recv_ip_addr;
 
-// 소켓 통신 스레드 함수
-DWORD WINAPI ClientMain(LPVOID arg);
-
-// 대화상자 프로시저
-BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
-// 편집 컨트롤 출력 함수
-void DisplayText(char *fmt, ...);
+char send_buf[BUFSIZE + 1];
+char recv_buf[BUFSIZE + 1];
 
 HWND hEdit1, hEdit2; // 편집 컨트롤
-
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
-	LPSTR lpCmdLine, int nCmdShow)
-{
-	// 소켓 통신 스레드 생성
-	CreateThread(NULL, 0, ClientMain, NULL, 0, NULL);
-
-	// 대화상자 생성
-	DialogBox(hInstance, MAKEINTRESOURCE(IDD_DIALOG1), NULL, DlgProc);
-	return 0;
-}
-
-// 대화상자 프로시저
-BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
-{
-	static char buf[EDIT_BUFSIZE + 1];
-
-	switch (uMsg) {
-	case WM_INITDIALOG:
-		hEdit1 = GetDlgItem(hDlg, IDC_EDIT1);
-		hEdit2 = GetDlgItem(hDlg, IDC_EDIT2);
-		SendMessage(hEdit1, EM_SETLIMITTEXT, BUFSIZE, 0);
-		return TRUE;
-	case WM_COMMAND:
-		switch (LOWORD(wParam)) {
-		case IDOK:
-			GetDlgItemText(hDlg, IDC_EDIT1, buf, BUFSIZE + 1);
-			DisplayText("%s\r\n", buf);
-			SetFocus(hEdit1);
-			SendMessage(hEdit1, EM_SETSEL, 0, -1);
-			return TRUE;
-		case IDCANCEL:
-			EndDialog(hDlg, IDCANCEL);
-			return TRUE;
-		}
-		return FALSE;
-	}
-	return FALSE;
-}
+HANDLE hWriteEvent; // 이벤트
 
 // 편집 컨트롤 출력 함수
 void DisplayText(char *fmt, ...)
@@ -76,7 +32,7 @@ void DisplayText(char *fmt, ...)
 	va_list arg;
 	va_start(arg, fmt);
 
-	char cbuf[BUFSIZE + 256];
+	char cbuf[BUFSIZE + 1];
 	vsprintf(cbuf, fmt, arg);
 
 	int nLength = GetWindowTextLength(hEdit2);
@@ -109,7 +65,7 @@ void err_display(char *msg)
 		NULL, WSAGetLastError(),
 		MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
 		(LPTSTR)&lpMsgBuf, 0, NULL);
-	printf("[%s] %s", msg, (char *)lpMsgBuf);
+	DisplayText("[%s] %s", msg, (char *)lpMsgBuf);
 	LocalFree(lpMsgBuf);
 }
 
@@ -125,7 +81,7 @@ typedef struct Chat_Sock {
 	struct ip_mreq mreq;
 } chat_sock_t;
 static int chat_sock_send(char *buf);
-static int chat_sock_recv(char *buf, int length);
+static int chat_sock_recv(char *buf, int *length);
 static chat_sock_t chat_sock;
 
 static int chat_sock_send(char *buf) {
@@ -139,7 +95,7 @@ static int chat_sock_send(char *buf) {
 
 	char temp_buf[BUFSIZ + 1];
 	if (buf[0] == ':')  strcpy(temp_buf, buf);
-	else sprintf(temp_buf, "%s\t||%s", buf, ctime(send_time));
+	else sprintf(temp_buf, "%s\t|| %s", buf, ctime(send_time));
 
 	retval = sendto(chat_sock.send_sock, temp_buf, strlen(temp_buf), 0,
 		(SOCKADDR *)&chat_sock.send_addr, sizeof(chat_sock.send_addr));
@@ -179,7 +135,7 @@ static void sys_cmd_enter_user(char *buf) {
 
 static void sys_cmd_overlap_user(char *buf) {
 	if (host_info_is_equal_name(recv_name)) {
-		printf("\n\nChange Name by Entering :setName\n\n");
+		DisplayText("\n\nChange Name by Entering :setName\n\n");
 		is_overlap_mode = true;
 	}
 }
@@ -187,7 +143,7 @@ static void sys_cmd_overlap_user(char *buf) {
 static void sys_cmd_argu_name(char *buf) {
 	if (host_info_is_equal_name(recv_name)) {
 		char *msg = &strstr(buf, " ")[1];
-		printf("[%s][%s] %s\n", recv_name, recv_ip_addr, msg);
+		DisplayText("[%s][%s] %s\n", recv_name, recv_ip_addr, msg);
 	}
 }
 
@@ -209,17 +165,17 @@ static const user_cmd_t user_cmd[] = {
 
 static void user_cmd_print_help(void) {
 	unsigned int i = 0;
-	printf("\n");
+	DisplayText("\n");
 	while (user_cmd[i].execute) {
-		printf("%s => %s\n", user_cmd[i].cmd, user_cmd[i].desc);
+		DisplayText("%s => %s\n", user_cmd[i].cmd, user_cmd[i].desc);
 		i++;
 	}
-	printf("\n");
+	DisplayText("\n");
 }
 
 static void user_cmd_set_name(void) {
 	char temp_name[CHAR_BUFSIZE];
-	printf("Enter new name : ");
+	DisplayText("Enter new name : ");
 	while (fgets(temp_name, CHAR_BUFSIZE, stdin) == NULL);
 	temp_name[strlen(temp_name) - 1] = '\0';
 
@@ -288,7 +244,6 @@ DWORD WINAPI Receiver(LPVOID arg)
 
 	// 데이터 통신에 사용할 변수
 	int addrlen = sizeof(chat_sock.recv_addr);
-	char buf[BUFSIZE + 1];
 
 	// 멀티캐스트 데이터 받기
 	while (1) {
@@ -296,21 +251,62 @@ DWORD WINAPI Receiver(LPVOID arg)
 		if (retval == SOCKET_ERROR) continue;
 		recv_name[retval] = '\0';
 
-		retval = chat_sock.recv(buf, &addrlen);
+		retval = chat_sock.recv(recv_buf, &addrlen);
 		if (retval == SOCKET_ERROR) continue;
-		buf[retval] = '\0';
+		recv_buf[retval] = '\0';
 
 		recv_ip_addr = inet_ntoa(chat_sock.recv_addr.sin_addr);
 
-		if (buf[0] == ':') {
-			parse_sys_cmd(buf);
+		if (recv_buf[0] == ':') {
+			parse_sys_cmd(recv_buf);
 		}
 		else if (!is_overlap_mode) {
-			printf("[%s][%s] %s\n", recv_name, recv_ip_addr, buf);
+			DisplayText("[%s][%s] %s\n", recv_name, recv_ip_addr, recv_buf);
 		}
 	}
 
 	return 0;
+}
+
+bool is_class_d_ip(char *multi_ip) {
+	long ip = inet_addr(multi_ip);
+	if ((ip & 0xff) < 224 || (ip & 0xff) > 239) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+
+	return true;
+}
+
+static void chat_info_init() {
+	char multi_cast_ip[HOST_INFO_BUFSIZE];
+	unsigned short multi_cast_port = 0;
+	char name[HOST_INFO_BUFSIZE] = { 0, };
+
+	do {
+		WaitForSingleObject(hWriteEvent, INFINITE);
+		strcpy(multi_cast_ip, send_buf);
+		if (is_class_d_ip(multi_cast_ip)) break;
+		DisplayText("Wrong IP\n");
+	} while(1);
+	do {
+		DisplayText("Enter multicast port\n");
+		WaitForSingleObject(hWriteEvent, INFINITE);
+	} while (1);
+	//scanf("%ld",&p_host_info->multi_cast_port) != 1
+	//|| p_host_info->multi_cast_port<0
+	//|| p_host_info->multi_cast_port>65535
+	//|| getchar() != '\n');
+	DisplayText("enter your nickname\n");
+	strcpy(name, send_buf);
+
+	DisplayText("start multicast chat! ip: %s, port: %d, name: %s\n", multi_cast_ip, multi_cast_port, name);
+	DisplayText("More information Enter :help\n\n\n");
+
+	host_info_init(&host_info);
 }
 
 void overlap_init() {
@@ -320,7 +316,7 @@ void overlap_init() {
 
 DWORD WINAPI ClientMain(LPVOID arg)
 {
-	host_info_init(&host_info);
+	chat_info_init();
 	chat_cmd_init(sys_cmd, user_cmd);
 	overlap_init();
 
@@ -350,7 +346,6 @@ DWORD WINAPI ClientMain(LPVOID arg)
 	chat_sock.recv = chat_sock_recv;
 
 	// 데이터 통신에 사용할 변수
-	char sendbuf[BUFSIZE + 1];
 	HANDLE hThread;
 
 	//리시버 스레드 생성
@@ -360,27 +355,82 @@ DWORD WINAPI ClientMain(LPVOID arg)
 	else { CloseHandle(hThread); }
 
 	Sleep(300);
-	sprintf(sendbuf, ":enter");
-	while (chat_sock.send(sendbuf) == SOCKET_ERROR);
+	sprintf(send_buf, ":enter");
+	while (chat_sock.send(send_buf) == SOCKET_ERROR);
 
 	// 멀티캐스트 데이터 보내기
 	while (1) {
-		// 데이터 입력
-		while (fgets(sendbuf, BUFSIZE + 1, stdin) == NULL);
-		sendbuf[strlen(sendbuf) - 1] = '\0';
+		WaitForSingleObject(hWriteEvent, INFINITE); // 쓰기 완료 기다리기
 
 		// 유저 명령어 확인
-		if (sendbuf[0] == ':') {
-			parse_user_cmd(sendbuf);
+		if (send_buf[0] == ':') {
+			parse_user_cmd(send_buf);
 			continue;
 		}
 
 		if (is_overlap_mode) {
 			char temp_buf[BUFSIZE + 1];
-			strcpy(temp_buf, sendbuf);
-			sprintf(sendbuf, ":argu %s", temp_buf);
+			strcpy(temp_buf, send_buf);
+			sprintf(send_buf, ":argu %s", temp_buf);
 		}
-		while (chat_sock.send(sendbuf) == SOCKET_ERROR);
+		while (chat_sock.send(send_buf) == SOCKET_ERROR);
 	}
+	return 0;
+}
+
+// 대화상자 프로시저
+INT_PTR CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
+{
+	switch (uMsg) {
+	case WM_INITDIALOG:
+		hEdit1 = GetDlgItem(hDlg, IDC_EDIT1);
+		hEdit2 = GetDlgItem(hDlg, IDC_EDIT2);
+		SendMessage(hEdit1, EM_SETLIMITTEXT, BUFSIZE, 0);
+		DisplayText("Enter multicast ip\n");
+		return TRUE;
+	case WM_COMMAND:
+		switch (LOWORD(wParam)) {
+		case IDOK:
+			GetDlgItemText(hDlg, IDC_EDIT1, send_buf, BUFSIZE + 1);
+			SetEvent(hWriteEvent); // 쓰기 완료 알리기
+			SetFocus(hEdit1);
+			SendMessage(hEdit1, EM_SETSEL, 0, -1);
+			return TRUE;
+		case IDCANCEL:
+			EndDialog(hDlg, IDCANCEL);
+			return TRUE;
+		}
+		return FALSE;
+	}
+	return FALSE;
+}
+
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
+	LPSTR lpCmdLine, int nCmdShow)
+{
+	// 이벤트 생성
+	hWriteEvent = CreateEvent(NULL, FALSE, FALSE, NULL);
+	if (hWriteEvent == NULL) return 1;
+
+	// 소켓 통신 스레드 생성
+	CreateThread(NULL, 0, ClientMain, NULL, 0, NULL);
+
+	// 대화상자 생성
+	DialogBox(hInstance, MAKEINTRESOURCE(IDD_DIALOG1), NULL, DlgProc);
+
+	// 이벤트 제거
+	CloseHandle(hWriteEvent);
+
+	// 멀티캐스트 그룹 탈퇴
+	setsockopt(chat_sock.recv_sock, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+		(char *)&chat_sock.mreq, sizeof(chat_sock.mreq));
+
+	// closesocket()
+	closesocket(chat_sock.recv_sock);
+	closesocket(chat_sock.send_sock);
+
+	// 윈속 종료
+	WSACleanup();
+
 	return 0;
 }
