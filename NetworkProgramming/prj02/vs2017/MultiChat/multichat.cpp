@@ -1,3 +1,6 @@
+// 2017년 1학기 네트워크프로그래밍 숙제 2번
+// 성명: 김태엽 학번: 092262
+
 #pragma comment(lib, "ws2_32")
 #include <winsock2.h>
 #include <ws2tcpip.h>
@@ -15,11 +18,10 @@
 bool is_enter_mode;
 bool is_overlap_mode;
 
-static char recv_name[CHAR_BUFSIZE];
-static char *recv_ip_addr;
-
 char send_buf[BUFSIZE + 1];
 char recv_buf[BUFSIZE + 1];
+static char recv_name[CHAR_BUFSIZE];
+static char *recv_ip_addr;
 
 HWND hEdit1, hEdit2; // 편집 컨트롤
 HANDLE hWriteEvent; // 이벤트
@@ -280,7 +282,7 @@ bool is_class_d_ip(char *multi_ip) {
 
 static void chat_info_init() {
 	char multi_cast_ip[CHAR_BUFSIZE] = { 0, };
-	unsigned short multi_cast_port = 0;
+	unsigned long multi_cast_port = 0;
 	char name[CHAR_BUFSIZE] = { 0, };
 	 
 	do {
@@ -290,10 +292,16 @@ static void chat_info_init() {
 		DisplayText("Wrong IP\n");
 	} while(1);
 	do {
+		int i;
 		DisplayText("\t\t<<<< Enter multicast port >>>>\n");
 		WaitForSingleObject(hWriteEvent, INFINITE);
-		if (sscanf(send_buf, "%hd", &multi_cast_port))
-			if (multi_cast_port >= 0 || multi_cast_port <= 65535) break;
+		for (i = 0; i < strlen(send_buf); i++) {
+			if (send_buf[i] < '0' || send_buf[i] > '9' || i >= 5) break;
+		}
+		if(i == strlen(send_buf))
+			if (sscanf(send_buf, "%ld", &multi_cast_port)) {
+				if (multi_cast_port >= 0 && multi_cast_port <= 65535) break;
+			}
 		DisplayText("Wrong Port\n");
 	} while (1);
 	DisplayText("\t\t<<<< Enter your nickname >>>>\n");
@@ -303,7 +311,7 @@ static void chat_info_init() {
 	DisplayText("start multicast chat! ip: %s, port: %d, name: %s\n", multi_cast_ip, multi_cast_port, name);
 	DisplayText("More information Enter :help\n\n\n");
 
-	host_info_init(multi_cast_ip, multi_cast_port, name);
+	host_info_init(multi_cast_ip, (unsigned short)multi_cast_port, name);
 }
 
 void overlap_init() {
