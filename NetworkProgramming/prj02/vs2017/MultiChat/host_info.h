@@ -12,7 +12,7 @@ typedef struct host_info_s {
 	time_t send_time;
 } host_info_t;
 
-void host_info_init(host_info_t *host_info);
+void host_info_init(char *ip, unsigned short  port, char *name);
 
 char *host_info_get_p_multicast_ip();
 
@@ -22,6 +22,6 @@ char *host_info_get_p_name();
 void host_info_set_name(char *name);
 bool host_info_is_equal_name(char *name);
 
-time_t *host_info_get_p_time();
+char *host_info_get_current_time();
 
 #endif

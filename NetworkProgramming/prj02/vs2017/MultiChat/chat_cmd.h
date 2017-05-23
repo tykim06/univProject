@@ -16,7 +16,7 @@ typedef struct user_cmd_s {
 }user_cmd_t;
 
 void chat_cmd_init(const sys_cmd_t *sys_cmd, const user_cmd_t *user_cmd);
-void parse_sys_cmd(char *buf);
-void parse_user_cmd(char *buf);
+bool parse_sys_cmd(char *buf);
+bool parse_user_cmd(char *buf);
 
 #endif

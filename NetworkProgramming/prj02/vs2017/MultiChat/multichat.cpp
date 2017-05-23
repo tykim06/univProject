@@ -12,8 +12,6 @@
 #define BUFSIZE     512
 #define CHAR_BUFSIZE  30
 
-host_info_t host_info;
-
 bool is_enter_mode;
 bool is_overlap_mode;
 
@@ -87,7 +85,6 @@ static chat_sock_t chat_sock;
 static int chat_sock_send(char *buf) {
 	int retval;
 	char *name = host_info_get_p_name();
-	time_t *send_time = host_info_get_p_time();
 
 	retval = sendto(chat_sock.send_sock, name, strlen(name), 0,
 		(SOCKADDR *)&chat_sock.send_addr, sizeof(chat_sock.send_addr));
@@ -95,7 +92,7 @@ static int chat_sock_send(char *buf) {
 
 	char temp_buf[BUFSIZ + 1];
 	if (buf[0] == ':')  strcpy(temp_buf, buf);
-	else sprintf(temp_buf, "%s\t|| %s", buf, ctime(send_time));
+	else sprintf(temp_buf, "%s\t|| %s", buf, host_info_get_current_time());
 
 	retval = sendto(chat_sock.send_sock, temp_buf, strlen(temp_buf), 0,
 		(SOCKADDR *)&chat_sock.send_addr, sizeof(chat_sock.send_addr));
@@ -175,9 +172,9 @@ static void user_cmd_print_help(void) {
 
 static void user_cmd_set_name(void) {
 	char temp_name[CHAR_BUFSIZE];
-	DisplayText("Enter new name : ");
-	while (fgets(temp_name, CHAR_BUFSIZE, stdin) == NULL);
-	temp_name[strlen(temp_name) - 1] = '\0';
+	DisplayText("\t\t<<<< Enter new name >>>>\n");
+	WaitForSingleObject(hWriteEvent, INFINITE);
+	strcpy(temp_name, send_buf);
 
 	is_enter_mode = false;
 
@@ -282,10 +279,10 @@ bool is_class_d_ip(char *multi_ip) {
 }
 
 static void chat_info_init() {
-	char multi_cast_ip[HOST_INFO_BUFSIZE];
+	char multi_cast_ip[CHAR_BUFSIZE] = { 0, };
 	unsigned short multi_cast_port = 0;
-	char name[HOST_INFO_BUFSIZE] = { 0, };
-
+	char name[CHAR_BUFSIZE] = { 0, };
+	 
 	do {
 		WaitForSingleObject(hWriteEvent, INFINITE);
 		strcpy(multi_cast_ip, send_buf);
@@ -293,20 +290,20 @@ static void chat_info_init() {
 		DisplayText("Wrong IP\n");
 	} while(1);
 	do {
-		DisplayText("Enter multicast port\n");
+		DisplayText("\t\t<<<< Enter multicast port >>>>\n");
 		WaitForSingleObject(hWriteEvent, INFINITE);
+		if (sscanf(send_buf, "%hd", &multi_cast_port))
+			if (multi_cast_port >= 0 || multi_cast_port <= 65535) break;
+		DisplayText("Wrong Port\n");
 	} while (1);
-	//scanf("%ld",&p_host_info->multi_cast_port) != 1
-	//|| p_host_info->multi_cast_port<0
-	//|| p_host_info->multi_cast_port>65535
-	//|| getchar() != '\n');
-	DisplayText("enter your nickname\n");
+	DisplayText("\t\t<<<< Enter your nickname >>>>\n");
+	WaitForSingleObject(hWriteEvent, INFINITE);
 	strcpy(name, send_buf);
 
 	DisplayText("start multicast chat! ip: %s, port: %d, name: %s\n", multi_cast_ip, multi_cast_port, name);
 	DisplayText("More information Enter :help\n\n\n");
 
-	host_info_init(&host_info);
+	host_info_init(multi_cast_ip, multi_cast_port, name);
 }
 
 void overlap_init() {
@@ -364,7 +361,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 
 		// 유저 명령어 확인
 		if (send_buf[0] == ':') {
-			parse_user_cmd(send_buf);
+			if (!parse_user_cmd(send_buf)) DisplayText("Wrong Command\n");
 			continue;
 		}
 
@@ -386,7 +383,7 @@ INT_PTR CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hEdit1 = GetDlgItem(hDlg, IDC_EDIT1);
 		hEdit2 = GetDlgItem(hDlg, IDC_EDIT2);
 		SendMessage(hEdit1, EM_SETLIMITTEXT, BUFSIZE, 0);
-		DisplayText("Enter multicast ip\n");
+		DisplayText("\t\t<<<< Enter multicast ip >>>>\n");
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
