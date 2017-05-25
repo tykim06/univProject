@@ -43,3 +43,10 @@ TEST(hw4_2, get_p_switched_case_when_included_word_expect_word) {
 
     STRCMP_EQUAL("sEjONG", get_p_switched_case(str, find));
 }
+
+TEST(hw4_2, get_p_switched_case_when_included_word_expect_word2) {
+    char str[] = "I Love sejong";
+    char find[] = "love";
+
+    STRCMP_EQUAL("lOVE", get_p_switched_case(str, find));
+}

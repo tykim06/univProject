@@ -35,13 +35,13 @@ char *get_p_switched_case(char *str, char *find) {
     if(p_find == NULL) return NULL;
     int find_idx = p_find-upper_str;
 
-    char switched_word[find_length+1];
-    strncpy(switched_word, &str[find_idx], find_length);
+    char *p_switched_word = &str[find_idx];
     for(i=0;i<find_length;i++) {
-        if(switched_word[i]>='a') switched_word[i] -= gap;
-        else switched_word[i] += gap;
+        if(p_switched_word[i]>='a') p_switched_word[i] -= gap;
+        else p_switched_word[i] += gap;
     }
+    p_switched_word[find_length] = '\0';
 
-    return switched_word;
+    return p_switched_word;
 }
 
