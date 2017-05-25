@@ -2,9 +2,12 @@
 // Microsoft Visual C++에서 생성한 포함 파일입니다.
 // MultiChat.rc에서 사용되고 있습니다.
 //
+#define IDOK2                           3
 #define IDD_DIALOG1                     101
 #define IDC_EDIT1                       1001
 #define IDC_EDIT2                       1002
+#define IDC_EDIT3                       1003
+#define IDC_EDIT4                       1004
 
 // Next default values for new objects
 // 

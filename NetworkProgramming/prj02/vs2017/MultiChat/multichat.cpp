@@ -17,13 +17,14 @@
 
 bool is_enter_mode;
 bool is_overlap_mode;
+bool is_send_all_mode;
 
 char send_buf[BUFSIZE + 1];
 char recv_buf[BUFSIZE + 1];
 static char recv_name[CHAR_BUFSIZE];
 static char *recv_ip_addr;
 
-HWND hEdit1, hEdit2; // 편집 컨트롤
+HWND hEdit1, hEdit2, hEdit3, hEdit4; // 편집 컨트롤
 HANDLE hWriteEvent; // 이벤트
 
 // 편집 컨트롤 출력 함수
@@ -38,6 +39,22 @@ void DisplayText(char *fmt, ...)
 	int nLength = GetWindowTextLength(hEdit2);
 	SendMessage(hEdit2, EM_SETSEL, nLength, nLength);
 	SendMessage(hEdit2, EM_REPLACESEL, FALSE, (LPARAM)cbuf);
+
+	va_end(arg);
+}
+
+// 편집 컨트롤 출력 함수
+void DisplayText_OverLap(char *fmt, ...)
+{
+	va_list arg;
+	va_start(arg, fmt);
+
+	char cbuf[BUFSIZE + 1];
+	vsprintf(cbuf, fmt, arg);
+
+	int nLength = GetWindowTextLength(hEdit4);
+	SendMessage(hEdit4, EM_SETSEL, nLength, nLength);
+	SendMessage(hEdit4, EM_REPLACESEL, FALSE, (LPARAM)cbuf);
 
 	va_end(arg);
 }
@@ -93,8 +110,8 @@ static int chat_sock_send(char *buf) {
 	if (retval == SOCKET_ERROR) err_display("sendto()");
 
 	char temp_buf[BUFSIZ + 1];
-	if (buf[0] == ':')  strcpy(temp_buf, buf);
-	else sprintf(temp_buf, "%s\t|| %s", buf, host_info_get_current_time());
+	//if (buf[0] == ':')  strcpy(temp_buf, buf);
+	sprintf(temp_buf, "%s\t|| %s", buf, host_info_get_current_time());
 
 	retval = sendto(chat_sock.send_sock, temp_buf, strlen(temp_buf), 0,
 		(SOCKADDR *)&chat_sock.send_addr, sizeof(chat_sock.send_addr));
@@ -134,7 +151,7 @@ static void sys_cmd_enter_user(char *buf) {
 
 static void sys_cmd_overlap_user(char *buf) {
 	if (host_info_is_equal_name(recv_name)) {
-		DisplayText("\n\nChange Name by Entering :setName\n\n");
+		DisplayText_OverLap("\n\n\nChange Name by Entering :setName\n\n\n");
 		is_overlap_mode = true;
 	}
 }
@@ -142,7 +159,7 @@ static void sys_cmd_overlap_user(char *buf) {
 static void sys_cmd_argu_name(char *buf) {
 	if (host_info_is_equal_name(recv_name)) {
 		char *msg = &strstr(buf, " ")[1];
-		DisplayText("[%s][%s] %s\n", recv_name, recv_ip_addr, msg);
+		DisplayText_OverLap("[%s][%s] %s\n", recv_name, recv_ip_addr, msg);
 	}
 }
 
@@ -175,6 +192,7 @@ static void user_cmd_print_help(void) {
 static void user_cmd_set_name(void) {
 	char temp_name[CHAR_BUFSIZE];
 	DisplayText("\t\t<<<< Enter new name >>>>\n");
+	DisplayText_OverLap("\t\t<<<< Enter new name >>>>\n");
 	WaitForSingleObject(hWriteEvent, INFINITE);
 	strcpy(temp_name, send_buf);
 
@@ -259,7 +277,7 @@ DWORD WINAPI Receiver(LPVOID arg)
 		if (recv_buf[0] == ':') {
 			parse_sys_cmd(recv_buf);
 		}
-		else if (!is_overlap_mode) {
+		else {
 			DisplayText("[%s][%s] %s\n", recv_name, recv_ip_addr, recv_buf);
 		}
 	}
@@ -317,6 +335,7 @@ static void chat_info_init() {
 void overlap_init() {
 	is_enter_mode = false;
 	is_overlap_mode = false;
+	is_send_all_mode = false;
 }
 
 DWORD WINAPI ClientMain(LPVOID arg)
@@ -373,12 +392,13 @@ DWORD WINAPI ClientMain(LPVOID arg)
 			continue;
 		}
 
-		if (is_overlap_mode) {
+		if (is_overlap_mode && !is_send_all_mode) {
 			char temp_buf[BUFSIZE + 1];
 			strcpy(temp_buf, send_buf);
 			sprintf(send_buf, ":argu %s", temp_buf);
 		}
 		while (chat_sock.send(send_buf) == SOCKET_ERROR);
+		is_send_all_mode = false;
 	}
 	return 0;
 }
@@ -390,12 +410,15 @@ INT_PTR CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_INITDIALOG:
 		hEdit1 = GetDlgItem(hDlg, IDC_EDIT1);
 		hEdit2 = GetDlgItem(hDlg, IDC_EDIT2);
+		hEdit3 = GetDlgItem(hDlg, IDC_EDIT3);
+		hEdit4 = GetDlgItem(hDlg, IDC_EDIT4);
 		SendMessage(hEdit1, EM_SETLIMITTEXT, BUFSIZE, 0);
 		DisplayText("\t\t<<<< Enter multicast ip >>>>\n");
 		return TRUE;
 	case WM_COMMAND:
 		switch (LOWORD(wParam)) {
 		case IDOK:
+			is_send_all_mode = true;
 			GetDlgItemText(hDlg, IDC_EDIT1, send_buf, BUFSIZE + 1);
 			SetEvent(hWriteEvent); // 쓰기 완료 알리기
 			SetFocus(hEdit1);
@@ -403,6 +426,13 @@ INT_PTR CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			return TRUE;
 		case IDCANCEL:
 			EndDialog(hDlg, IDCANCEL);
+			return TRUE;
+		case IDOK2:
+			if (!is_overlap_mode) return TRUE;
+			GetDlgItemText(hDlg, IDC_EDIT3, send_buf, BUFSIZE + 1);
+			SetEvent(hWriteEvent); // 쓰기 완료 알리기
+			SetFocus(hEdit3);
+			SendMessage(hEdit3, EM_SETSEL, 0, -1);
 			return TRUE;
 		}
 		return FALSE;
