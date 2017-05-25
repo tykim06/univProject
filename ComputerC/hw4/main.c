@@ -18,7 +18,7 @@ int main(void) {
             printf("exist : %s\n", get_p_switched_case(str, find));
         else
             printf("not exist\n");
-        printf("run-1 or stop-0 : ");
+        printf("1:run 0:stop\n");
         flag = getchar();
         getchar();
     }
