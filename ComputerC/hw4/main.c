@@ -13,7 +13,11 @@ int main(void) {
         fgets(find, sizeof(find), stdin);
         find[strlen(find)-1] = '\0';
 
-        printf("exist : %s\n", get_p_switched_case(str, find));
+        char *word = get_p_switched_case(str, find);
+        if(word)
+            printf("exist : %s\n", get_p_switched_case(str, find));
+        else
+            printf("not exist\n");
         printf("run-1 or stop-0 : ");
         flag = getchar();
         getchar();
