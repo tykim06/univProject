@@ -15,7 +15,7 @@ int main(void) {
 
         char *word = get_p_switched_case(str, find);
         if(word)
-            printf("exist : %s\n", get_p_switched_case(str, find));
+            printf("exist : %s\n", word);
         else
             printf("not exist\n");
         printf("1:run 0:stop\n");
