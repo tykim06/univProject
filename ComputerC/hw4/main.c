@@ -1,26 +1,5 @@
 #include <stdio.h>
-#include "hw4_2.h"
-#include <string.h>
 
 int main(void) {
-    char str[101];
-    char find[16];
-    char flag = '1';
-
-    while(flag == '1') {
-        fgets(str, sizeof(str), stdin);
-        str[strlen(str)-1] = '\0';
-        fgets(find, sizeof(find), stdin);
-        find[strlen(find)-1] = '\0';
-
-        char *word = get_p_switched_case(str, find);
-        if(word)
-            printf("exist : %s\n", word);
-        else
-            printf("not exist\n");
-        printf("1:run 0:stop\n");
-        flag = getchar();
-        getchar();
-    }
     return 0;
 }
