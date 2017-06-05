@@ -44,7 +44,10 @@ int find_car(Car_t *p_car) {
     getchar();
 
     for(i=0;i<100;i++) {
-        if(p_car[i].name[0] == 0) return -1;
+        if(p_car[i].name[0] == 0) {
+            printf("not exist\n");
+            return -1;
+        }
         else if(strcmp(p_car[i].name, name) == 0) {
             printf("type:%s,number:%d\n", MODEL_NAME[p_car[i].model], p_car[i].count);
             return i;
