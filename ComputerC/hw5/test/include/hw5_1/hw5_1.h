@@ -12,9 +12,9 @@ typedef struct Car_s {
     int count;
 } Car_t;
 
-void hw5_1_create(Car_t *p_car);
+void hw5_1_create(Car_t *p_cars);
 void hw5_1_destroy(void);
-int add_car(Car_t *p_car);
-int find_car(Car_t *p_car);
+int add_car(Car_t *p_cars, Car_t car);
+int find_car(Car_t *p_car, char *p_name);
 
 #endif  /* D_Fakehw5_1_H */

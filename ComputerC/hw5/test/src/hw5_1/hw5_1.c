@@ -13,23 +13,14 @@ void hw5_1_destroy(void)
 {
 }
 
-int add_car(Car_t *p_car) {
-    char name[20];
-    int model, count;
+int add_car(Car_t *p_cars, Car_t car) {
     int i;
 
-    scanf("%s", name);
-
-    printf("0:Sedan/1:SUV/2:VAN\n");
-    scanf("%d", &model);
-
-    scanf("%d", &count);
-
     for(i=0;i<100;i++) {
-        if(p_car[i].name[0] == 0) {
-            strcpy(p_car[i].name, name);
-            p_car[i].model = model;
-            p_car[i].count = count;
+        if(p_cars[i].name[0] == 0) {
+            strcpy(p_cars[i].name, car.name);
+            p_cars[i].model = car.model;
+            p_cars[i].count = car.count;
 
             return i;
         }
@@ -37,16 +28,12 @@ int add_car(Car_t *p_car) {
     return -1;
 }
 
-int find_car(Car_t *p_car) {
-    char name[20];
+int find_car(Car_t *p_cars, char *p_name) {
     int i;
 
-    scanf("%s", name);
-
     for(i=0;i<100;i++) {
-        if(p_car[i].name[0] == 0) return -1;
-        else if(strcmp(p_car[i].name, name) == 0) {
-            printf("type:%s,number:%d\n", MODEL_NAME[p_car[i].model], p_car[i].count);
+        if(p_cars[i].name[0] == 0) return -1;
+        else if(strcmp(p_cars[i].name, p_name) == 0) {
             return i;
         }
     }

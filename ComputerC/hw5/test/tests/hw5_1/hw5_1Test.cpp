@@ -6,13 +6,13 @@ extern "C"
 #include "CppUTest/TestHarness.h"
 #include <stdio.h>
 
-Car_t car[100];
+Car_t cars[100];
 
 TEST_GROUP(hw5_1)
 {
     void setup()
     {
-        hw5_1_create(car);
+        hw5_1_create(cars);
     }
 
     void teardown()
@@ -22,18 +22,20 @@ TEST_GROUP(hw5_1)
 };
 
 TEST(hw5_1, add_car_when_overlap_name_return_idx) {
-    printf("add_car\n");
-
-    CHECK_EQUAL(0, add_car(car));
-    CHECK_EQUAL(1, add_car(car));
+    Car_t car = {"k7", 2, 1};
+    CHECK_EQUAL(0, add_car(cars, car));
+    Car_t car1 = {"k5", 1, 5};
+    CHECK_EQUAL(1, add_car(cars, car1));
 }
 
 TEST(hw5_1, add_car_when_car_name_return_idx) {
-    printf("find_car\n");
+    Car_t car = {"k7", 2, 1};
+    CHECK_EQUAL(0, add_car(cars, car));
+    Car_t car1 = {"k5", 1, 5};
+    CHECK_EQUAL(1, add_car(cars, car1));
 
-    CHECK_EQUAL(0, add_car(car));
-    CHECK_EQUAL(1, add_car(car));
-
-    CHECK_EQUAL(0, find_car(car));
-    CHECK_EQUAL(1, find_car(car));
+    char name[] = "k7";
+    CHECK_EQUAL(0, find_car(cars, name));
+    char name1[] = "k5";
+    CHECK_EQUAL(1, find_car(cars, name1));
 }
