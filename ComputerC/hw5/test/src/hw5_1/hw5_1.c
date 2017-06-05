@@ -2,7 +2,7 @@
 #include <stdio.h>
 #include <string.h>
 
-static const char MODEL_NAME = {"Sedan", "SUV", "VAN"};
+static const char *MODEL_NAME[] = {"Sedan", "SUV", "VAN"};
 
 void hw5_1_create(Car_t *p_car)
 {
