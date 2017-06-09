@@ -11,8 +11,9 @@
 #define SERVERPORT  9000
 
 #define BUFSIZE     256                    // 전송 메시지 전체 크기
-#define MSGSIZE     (BUFSIZE-20*sizeof(char)-sizeof(int))  // 채팅 메시지 최대 길이
+#define MSGSIZE     (BUFSIZE-40*sizeof(char)-sizeof(int))  // 채팅 메시지 최대 길이
 
+#define ENTER		1000
 #define CH1			1001
 #define CH2			1002
 
@@ -20,13 +21,16 @@
 // sizeof(CHAT_MSG) == 256
 struct CHAT_MSG
 {
-	int  ch;
-	char nickname[20];
+	int  type;
+	char nick[20];
+	char dm_nick[20];
 	char buf[MSGSIZE];
 };
 
 static HINSTANCE     g_hInst; // 응용 프로그램 인스턴스 핸들
 static HWND          g_hButtonSendMsg; // '메시지 전송' 버튼
+static HWND          g_hButtonShowList; // '참가자 리스트' 버튼
+static HWND          g_hButtonIsDirect; // '비밀 대화' 버튼
 static HWND          g_hEditStatus; // 받은 메시지 출력
 static HWND          g_hEditStatus_DM; // 받은 DM 메시지 출력
 static char          g_ipaddr[64]; // 서버 IP 주소
@@ -36,7 +40,6 @@ static volatile BOOL g_bStart; // 통신 시작 여부
 static SOCKET        g_sock; // 클라이언트 소켓
 static HANDLE        g_hReadEvent, g_hWriteEvent; // 이벤트 핸들
 static CHAT_MSG      g_chatmsg; // 채팅 메시지 저장
-static char          g_nickname[20]; // 닉네임
 
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND, UINT, WPARAM, LPARAM);
@@ -67,8 +70,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	if(g_hWriteEvent == NULL) return 1;
 
 	// 변수 초기화(일부)
-	g_chatmsg.ch = CH1;
-	memset(g_chatmsg.nickname, 0, sizeof(g_chatmsg.nickname));
+	g_chatmsg.type = CH1;
+	memset(g_chatmsg.nick, 0, sizeof(g_chatmsg.nick));
+	memset(g_chatmsg.dm_nick, 0, sizeof(g_chatmsg.dm_nick));
 
 	// 대화상자 생성
 	g_hInst = hInstance;
@@ -83,6 +87,31 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	return 0;
 }
 
+bool is_valid_ip(char *ipaddr) {
+	long ip = inet_addr(ipaddr);
+	if ((ip & 0xff) < 0 || (ip & 0xff) > 223) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+	ip = ip >> 8;
+	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
+
+	return true;
+}
+
+bool is_valid_port(char *c_port, unsigned short *port) {
+	unsigned short u_s_port;
+	if (strlen(c_port) > 5) return false;
+	if (sscanf(c_port, "%hu", &u_s_port)) {
+		if (u_s_port >= 0 && u_s_port <= 65535) {
+			*port = u_s_port;
+			return true;
+		}
+	}
+	return false;
+}
+
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -91,6 +120,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static HWND hEditPort;
 	static HWND hButtonConnect;
 	static HWND hEditMsg;
+	static HWND hEditNickname;
+	static HWND hEditDMNickname;
 	static HWND hCH1;
 	static HWND hCH2;
 
@@ -102,7 +133,11 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hEditPort = GetDlgItem(hDlg, IDC_PORT);
 		hButtonConnect = GetDlgItem(hDlg, IDC_CONNECT2);
 		g_hButtonSendMsg = GetDlgItem(hDlg, IDC_SENDMSG);
+		g_hButtonShowList = GetDlgItem(hDlg, IDC_SHOW_LIST);
+		g_hButtonIsDirect = GetDlgItem(hDlg, IDC_CHECK_DM);
 		hEditMsg = GetDlgItem(hDlg, IDC_MSG);
+		hEditNickname = GetDlgItem(hDlg, IDC_NICKNAME);
+		hEditDMNickname = GetDlgItem(hDlg, IDC_DM_NICKNAME);
 		g_hEditStatus = GetDlgItem(hDlg, IDC_STATUS);
 		g_hEditStatus_DM = GetDlgItem(hDlg, IDC_STATUS_DM);
 		hCH1 = GetDlgItem(hDlg, IDC_CH1);
@@ -110,7 +145,11 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		// 컨트롤 초기화
 		SendMessage(hEditMsg, EM_SETLIMITTEXT, MSGSIZE, 0);
+		SendMessage(hEditNickname, EM_SETLIMITTEXT, 20, 0);
+		SendMessage(hEditDMNickname, EM_SETLIMITTEXT, 20, 0);
 		EnableWindow(g_hButtonSendMsg, FALSE);
+		EnableWindow(g_hButtonShowList, FALSE);
+		EnableWindow(g_hButtonIsDirect, FALSE);
 		SetDlgItemText(hDlg, IDC_IPADDR, SERVERIPV4);
 		SetDlgItemInt(hDlg, IDC_PORT, SERVERPORT, FALSE);
 		SendMessage(hCH1, BM_SETCHECK, BST_CHECKED, 0);
@@ -125,16 +164,38 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				char nickname[20];
 				GetDlgItemText(hDlg, IDC_DM_NICKNAME, nickname, sizeof(nickname));
 				// todo : 상대방 닉네임 유효성 검사
-				strcpy(g_chatmsg.nickname, nickname);
+				strcpy(g_chatmsg.dm_nick, nickname);
 			}
 			else {
-				memset(g_chatmsg.nickname, 0, sizeof(g_chatmsg.nickname));
+				memset(g_chatmsg.dm_nick, 0, sizeof(g_chatmsg.dm_nick));
 			}
 			return TRUE;
 
 		case IDC_CONNECT2:
-			GetDlgItemText(hDlg, IDC_IPADDR, g_ipaddr, sizeof(g_ipaddr));
-			g_port = GetDlgItemInt(hDlg, IDC_PORT, NULL, FALSE);
+			char ipaddr[64];
+			GetDlgItemText(hDlg, IDC_IPADDR, ipaddr, sizeof(g_ipaddr));
+			if (!is_valid_ip(ipaddr)) {
+				MessageBox(hDlg, "올바르지 않은 IP 주소입니다.", "실패!", MB_ICONERROR);
+				return TRUE;
+			}
+			strcpy(g_ipaddr, ipaddr);
+
+			char c_port[10];
+			unsigned short port;
+			GetDlgItemText(hDlg, IDC_PORT, c_port, sizeof(c_port));
+			if (!is_valid_port(c_port, &port)) {
+				MessageBox(hDlg, "올바르지 않은 PORT 입니다.", "실패!", MB_ICONERROR);
+				return TRUE;
+			}
+			g_port = port;
+
+			char nickname[20];
+			GetDlgItemText(hDlg, IDC_NICKNAME, nickname, sizeof(nickname));
+			if (strlen(nickname) == 0) {
+				MessageBox(hDlg, "닉네임을 입력해주세요.", "실패!", MB_ICONERROR);
+				return TRUE;
+			}
+			strcpy(g_chatmsg.nick, nickname);
 
 			// 소켓 통신 스레드 시작
 			g_hClientThread = CreateThread(NULL, 0, ClientMain, NULL, 0, NULL);
@@ -146,9 +207,14 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			else{
 				EnableWindow(hButtonConnect, FALSE);
 				while(g_bStart == FALSE); // 서버 접속 성공 기다림
+
+				//todo : 닉네임 중복 체크
+
 				EnableWindow(hEditIPaddr, FALSE);
 				EnableWindow(hEditPort, FALSE);
 				EnableWindow(g_hButtonSendMsg, TRUE);
+				EnableWindow(g_hButtonShowList, TRUE);
+				EnableWindow(g_hButtonIsDirect, TRUE);
 				SetFocus(hEditMsg);
 			}
 			return TRUE;
@@ -164,11 +230,11 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			return TRUE;
 
 		case IDC_CH1:
-			g_chatmsg.ch = CH1;
+			g_chatmsg.type = CH1;
 			return TRUE;
 
 		case IDC_CH2:
-			g_chatmsg.ch = CH2;
+			g_chatmsg.type = CH2;
 			return TRUE;
 
 		case IDCANCEL:
@@ -187,27 +253,53 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	return FALSE;
 }
 
+bool isOverlappedNickname() {
+	int retval;
+	CHAT_MSG chat_msg;
+	// 데이터 보내기
+	retval = send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0);
+
+	while (1) {
+		retval = recvn(g_sock, (char *)&chat_msg, BUFSIZE, 0);
+		if (retval == 0 || retval == SOCKET_ERROR) {
+			break;
+		}
+
+		if (strlen(chat_msg.dm_nick) != 0) {
+			if (strcmp(g_chatmsg.nick, chat_msg.dm_nick) != 0) continue;
+		}
+		if (g_chatmsg.type != chat_msg.type) continue;
+
+		DisplayText(chat_msg.type, "[받은 메시지] %s\r\n", chat_msg.buf);
+	}
+	return false;
+}
+
 // 소켓 통신 스레드 함수
 DWORD WINAPI ClientMain(LPVOID arg)
 {
 	int retval;
 
 	// socket()
-	g_sock = socket(AF_INET6, SOCK_STREAM, 0);
-	if(g_sock == INVALID_SOCKET) err_quit("socket()");
+	g_sock = socket(AF_INET, SOCK_STREAM, 0);
+	if (g_sock == INVALID_SOCKET) err_quit("socket()");
 
 	// connect()
-	SOCKADDR_IN6 serveraddr;
+	SOCKADDR_IN serveraddr;
 	ZeroMemory(&serveraddr, sizeof(serveraddr));
-	serveraddr.sin6_family = AF_INET6;
-	int addrlen = sizeof(serveraddr);
-	WSAStringToAddress(g_ipaddr, AF_INET6, NULL,
-		(SOCKADDR *)&serveraddr, &addrlen);
-	serveraddr.sin6_port = htons(g_port);
+	serveraddr.sin_family = AF_INET;
+	serveraddr.sin_addr.s_addr = inet_addr(g_ipaddr);
+	serveraddr.sin_port = htons(g_port);
 	retval = connect(g_sock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
-	if(retval == SOCKET_ERROR) err_quit("connect()");
-	
-	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
+	if (retval == SOCKET_ERROR) err_quit("connect()");
+
+	g_bStart = TRUE;
+
+	if (isOverlappedNickname()) {
+		MessageBox(NULL, "중복된 닉네임 입니다.", "실패!", MB_ICONERROR);
+		closesocket(g_sock);
+		return 0;
+	}
 
 	// 읽기 & 쓰기 스레드 생성
 	HANDLE hThread[2];
@@ -220,7 +312,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 		exit(1);
 	}
 
-	g_bStart = TRUE;
+	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
 
 	// 스레드 종료 대기
 	retval = WaitForMultipleObjects(2, hThread, FALSE, INFINITE);
@@ -253,12 +345,12 @@ DWORD WINAPI ReadThread(LPVOID arg)
 			break;
 		}
 
-		if (strlen(chat_msg.nickname) != 0) {
-			if (strcmp(g_nickname, chat_msg.nickname) != 0) continue;
+		if (strlen(chat_msg.dm_nick) != 0) {
+			if (strcmp(g_chatmsg.nick, chat_msg.dm_nick) != 0) continue;
 		}
-		if (g_chatmsg.ch != chat_msg.ch) continue;
+		if (g_chatmsg.type != chat_msg.type) continue;
 
-		DisplayText(chat_msg.ch, "[받은 메시지] %s\r\n", chat_msg.buf);
+		DisplayText(chat_msg.type, "[받은 메시지] %s\r\n", chat_msg.buf);
 	}
 
 	return 0;
