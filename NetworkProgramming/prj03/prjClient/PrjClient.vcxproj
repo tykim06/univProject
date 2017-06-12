@@ -75,9 +75,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="DataValidator.h" />
     <ClInclude Include="resource.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="DataValidator.cpp" />
     <ClCompile Include="PrjClient.cpp" />
   </ItemGroup>
   <ItemGroup>

@@ -5,13 +5,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include "resource.h"
+#include "DataValidator.h"
 
 #define SERVERIPV4  "127.0.0.1"
 #define SERVERIPV6  "::1"
 #define SERVERPORT  9000
 
 #define BUFSIZE     256                    // 전송 메시지 전체 크기
-#define MSGSIZE     (BUFSIZE-40*sizeof(char)-sizeof(int))  // 채팅 메시지 최대 길이
+#define MSGSIZE     (BUFSIZE-48*sizeof(char)-sizeof(int))  // 채팅 메시지 최대 길이
 
 #define ENTER		1000
 #define CH1			1001
@@ -22,11 +23,17 @@
 struct CHAT_MSG
 {
 	int  type;
-	char nick[20];
-	char dm_nick[20];
+	char nick[24];
+	char dm_nick[24];
 	char buf[MSGSIZE];
 };
 
+typedef enum {
+	OVERLAP_STATUS_NO_OVERLAPPED,
+	OVERLAP_STATUS_OVERLAPPED,
+	OVERLAP_STATUS_NULL
+} overlap_status_t;
+static volatile BOOL g_eNickname; // 통신 시작 여부
 static HINSTANCE     g_hInst; // 응용 프로그램 인스턴스 핸들
 static HWND          g_hButtonSendMsg; // '메시지 전송' 버튼
 static HWND          g_hButtonShowList; // '참가자 리스트' 버튼
@@ -70,9 +77,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	if(g_hWriteEvent == NULL) return 1;
 
 	// 변수 초기화(일부)
-	g_chatmsg.type = CH1;
+	g_chatmsg.type = ENTER;
 	memset(g_chatmsg.nick, 0, sizeof(g_chatmsg.nick));
 	memset(g_chatmsg.dm_nick, 0, sizeof(g_chatmsg.dm_nick));
+	g_eNickname = OVERLAP_STATUS_NULL;
 
 	// 대화상자 생성
 	g_hInst = hInstance;
@@ -87,31 +95,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	return 0;
 }
 
-bool is_valid_ip(char *ipaddr) {
-	long ip = inet_addr(ipaddr);
-	if ((ip & 0xff) < 0 || (ip & 0xff) > 223) return false;
-	ip = ip >> 8;
-	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
-	ip = ip >> 8;
-	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
-	ip = ip >> 8;
-	if ((ip & 0xff) > 255 || (ip & 0xff) < 0) return false;
-
-	return true;
-}
-
-bool is_valid_port(char *c_port, unsigned short *port) {
-	unsigned short u_s_port;
-	if (strlen(c_port) > 5) return false;
-	if (sscanf(c_port, "%hu", &u_s_port)) {
-		if (u_s_port >= 0 && u_s_port <= 65535) {
-			*port = u_s_port;
-			return true;
-		}
-	}
-	return false;
-}
-
 // 대화상자 프로시저
 BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
@@ -119,6 +102,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static HWND hEditIPaddr;
 	static HWND hEditPort;
 	static HWND hButtonConnect;
+	static HWND hButtonOverlap;
 	static HWND hEditMsg;
 	static HWND hEditNickname;
 	static HWND hEditDMNickname;
@@ -132,6 +116,7 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hEditIPaddr = GetDlgItem(hDlg, IDC_IPADDR);
 		hEditPort = GetDlgItem(hDlg, IDC_PORT);
 		hButtonConnect = GetDlgItem(hDlg, IDC_CONNECT2);
+		hButtonOverlap = GetDlgItem(hDlg, IDC_CHECK_OVERLAP);
 		g_hButtonSendMsg = GetDlgItem(hDlg, IDC_SENDMSG);
 		g_hButtonShowList = GetDlgItem(hDlg, IDC_SHOW_LIST);
 		g_hButtonIsDirect = GetDlgItem(hDlg, IDC_CHECK_DM);
@@ -189,14 +174,6 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			}
 			g_port = port;
 
-			char nickname[20];
-			GetDlgItemText(hDlg, IDC_NICKNAME, nickname, sizeof(nickname));
-			if (strlen(nickname) == 0) {
-				MessageBox(hDlg, "닉네임을 입력해주세요.", "실패!", MB_ICONERROR);
-				return TRUE;
-			}
-			strcpy(g_chatmsg.nick, nickname);
-
 			// 소켓 통신 스레드 시작
 			g_hClientThread = CreateThread(NULL, 0, ClientMain, NULL, 0, NULL);
 			if(g_hClientThread == NULL){
@@ -208,17 +185,32 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hButtonConnect, FALSE);
 				while(g_bStart == FALSE); // 서버 접속 성공 기다림
 
-				//todo : 닉네임 중복 체크
-
-				EnableWindow(hEditIPaddr, FALSE);
-				EnableWindow(hEditPort, FALSE);
-				EnableWindow(g_hButtonSendMsg, TRUE);
-				EnableWindow(g_hButtonShowList, TRUE);
-				EnableWindow(g_hButtonIsDirect, TRUE);
-				SetFocus(hEditMsg);
+				SetFocus(hEditNickname);
 			}
 			return TRUE;
+		
+		case IDC_CHECK_OVERLAP:
+			char nickname[24];
+			GetDlgItemText(hDlg, IDC_NICKNAME, nickname, sizeof(nickname));
+			if (!is_valid_nickname(nickname)) {
+				MessageBox(hDlg, "올바르지 않은 닉네임 입니다.", "실패!", MB_ICONERROR);
+				return;
+			}
 
+			int retval;
+			strcpy(g_chatmsg.nick, nickname);
+			EnableWindow(hButtonOverlap, FALSE);
+			// 데이터 보내기
+			retval = send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0);
+			while (g_eNickname == OVERLAP_STATUS_NULL); // 중복 검사 결과 값 기다림
+
+			EnableWindow(hEditIPaddr, FALSE);
+			EnableWindow(hEditPort, FALSE);
+			EnableWindow(g_hButtonSendMsg, TRUE);
+			EnableWindow(g_hButtonShowList, TRUE);
+			EnableWindow(g_hButtonIsDirect, TRUE);
+			SetFocus(hEditMsg);
+			break;
 		case IDC_SENDMSG:
 			// 읽기 완료를 기다림
 			WaitForSingleObject(g_hReadEvent, INFINITE);
@@ -253,28 +245,6 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	return FALSE;
 }
 
-bool isOverlappedNickname() {
-	int retval;
-	CHAT_MSG chat_msg;
-	// 데이터 보내기
-	retval = send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0);
-
-	while (1) {
-		retval = recvn(g_sock, (char *)&chat_msg, BUFSIZE, 0);
-		if (retval == 0 || retval == SOCKET_ERROR) {
-			break;
-		}
-
-		if (strlen(chat_msg.dm_nick) != 0) {
-			if (strcmp(g_chatmsg.nick, chat_msg.dm_nick) != 0) continue;
-		}
-		if (g_chatmsg.type != chat_msg.type) continue;
-
-		DisplayText(chat_msg.type, "[받은 메시지] %s\r\n", chat_msg.buf);
-	}
-	return false;
-}
-
 // 소켓 통신 스레드 함수
 DWORD WINAPI ClientMain(LPVOID arg)
 {
@@ -293,13 +263,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 	retval = connect(g_sock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
 	if (retval == SOCKET_ERROR) err_quit("connect()");
 
-	g_bStart = TRUE;
-
-	if (isOverlappedNickname()) {
-		MessageBox(NULL, "중복된 닉네임 입니다.", "실패!", MB_ICONERROR);
-		closesocket(g_sock);
-		return 0;
-	}
+	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
 
 	// 읽기 & 쓰기 스레드 생성
 	HANDLE hThread[2];
@@ -312,7 +276,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 		exit(1);
 	}
 
-	MessageBox(NULL, "서버에 접속했습니다.", "성공!", MB_ICONINFORMATION);
+	g_bStart = TRUE;
 
 	// 스레드 종료 대기
 	retval = WaitForMultipleObjects(2, hThread, FALSE, INFINITE);
@@ -343,6 +307,15 @@ DWORD WINAPI ReadThread(LPVOID arg)
 		retval = recvn(g_sock, (char *)&chat_msg, BUFSIZE, 0);
 		if(retval == 0 || retval == SOCKET_ERROR){
 			break;
+		}
+
+		if (chat_msg.type == ENTER) {
+			if (strlen(chat_msg.nick) != 0) {
+				g_eNickname = OVERLAP_STATUS_OVERLAPPED;
+			}
+			else {
+				g_eNickname = OVERLAP_STATUS_OVERLAPPED;
+			}	
 		}
 
 		if (strlen(chat_msg.dm_nick) != 0) {
