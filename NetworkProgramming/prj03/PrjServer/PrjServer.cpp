@@ -4,9 +4,23 @@
 #include <windows.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "NickName.h"
 
 #define SERVERPORT 9000
 #define BUFSIZE    256
+#define MSGSIZE     (BUFSIZE-48*sizeof(char)-sizeof(int))  // 채팅 메시지 최대 길이
+
+#define ENTER		1000
+#define LIST		1003
+#define DM			1004
+
+struct CHAT_MSG
+{
+	int  type;
+	char nick[24];
+	char dm_nick[24];
+	char buf[MSGSIZE];
+};
 
 // 소켓 정보 저장을 위한 구조체와 변수
 struct SOCKETINFO
@@ -27,6 +41,8 @@ void RemoveSocketInfo(int nIndex);
 // 오류 출력 함수
 void err_quit(char *msg);
 void err_display(char *msg);
+
+bool is_valid_nickname(char *nickname);
 
 int main(int argc, char *argv[])
 {
@@ -55,39 +71,17 @@ int main(int argc, char *argv[])
 	if(retval == SOCKET_ERROR) err_quit("listen()");
 	/*----- IPv4 소켓 초기화 끝 -----*/
 
-	/*----- IPv6 소켓 초기화 시작 -----*/
-	// socket()
-	SOCKET listen_sockv6 = socket(AF_INET6, SOCK_STREAM, 0);
-	if(listen_sockv6 == INVALID_SOCKET) err_quit("socket()");
-
-	// bind()
-	SOCKADDR_IN6 serveraddrv6;
-	ZeroMemory(&serveraddrv6, sizeof(serveraddrv6));
-	serveraddrv6.sin6_family = AF_INET6;
-	serveraddrv6.sin6_addr = in6addr_any;
-	serveraddrv6.sin6_port = htons(SERVERPORT);
-	retval = bind(listen_sockv6, (SOCKADDR *)&serveraddrv6, sizeof(serveraddrv6));
-	if(retval == SOCKET_ERROR) err_quit("bind()");
-
-	// listen()
-	retval = listen(listen_sockv6, SOMAXCONN);
-	if(retval == SOCKET_ERROR) err_quit("listen()");
-	/*----- IPv6 소켓 초기화 끝 -----*/
-
 	// 데이터 통신에 사용할 변수(공통)
 	FD_SET rset;
 	SOCKET client_sock;
 	int addrlen, i, j;
 	// 데이터 통신에 사용할 변수(IPv4)
 	SOCKADDR_IN clientaddrv4;
-	// 데이터 통신에 사용할 변수(IPv6)
-	SOCKADDR_IN6 clientaddrv6;
 
 	while(1){
 		// 소켓 셋 초기화
 		FD_ZERO(&rset);
 		FD_SET(listen_sockv4, &rset);
-		FD_SET(listen_sockv6, &rset);
 		for(i=0; i<nTotalSockets; i++){
 			FD_SET(SocketInfoArray[i]->sock, &rset);
 		}
@@ -115,24 +109,6 @@ int main(int argc, char *argv[])
 				AddSocketInfo(client_sock, false);
 			}
 		}
-		if(FD_ISSET(listen_sockv6, &rset)){
-			addrlen = sizeof(clientaddrv6);
-			client_sock = accept(listen_sockv6, (SOCKADDR *)&clientaddrv6, &addrlen);
-			if(client_sock == INVALID_SOCKET){
-				err_display("accept()");
-				break;
-			}
-			else{
-				// 접속한 클라이언트 정보 출력
-				char ipaddr[50];
-				DWORD ipaddrlen = sizeof(ipaddr);
-				WSAAddressToString((SOCKADDR *)&clientaddrv6, sizeof(clientaddrv6),
-					NULL, ipaddr, &ipaddrlen);
-				printf("[TCPv6 서버] 클라이언트 접속: %s\n", ipaddr);
-				// 소켓 정보 추가
-				AddSocketInfo(client_sock, true);
-			}
-		}
 
 		// 소켓 셋 검사(2): 데이터 통신
 		for(i=0; i<nTotalSockets; i++){
@@ -146,25 +122,67 @@ int main(int argc, char *argv[])
 					continue;
 				}
 
-				// 받은 바이트 수 누적
-				ptr->recvbytes += retval;
-
-				if(ptr->recvbytes == BUFSIZE){
-					// 받은 바이트 수 리셋
-					ptr->recvbytes = 0;
-
-					// 현재 접속한 모든 클라이언트에게 데이터를 보냄!
-					for(j=0; j<nTotalSockets; j++){
-						SOCKETINFO *ptr2 = SocketInfoArray[j];
-						retval = send(ptr2->sock, ptr->buf, BUFSIZE, 0);
-						if(retval == SOCKET_ERROR){
+				CHAT_MSG *chatMsg = (CHAT_MSG *)(ptr->buf + ptr->recvbytes);
+				if (chatMsg->type == ENTER) {
+					j = find_nickname(chatMsg->nick);
+					if ( j == -1) {		// 닉네임이 존재하지 않는다면
+						add_nickname(chatMsg->nick, i);
+					}
+					else if(i != j) {	// 존재하고 자신의 닉네임도 아니라면
+						memset(chatMsg->nick, 0, 24);
+					}
+					retval = send(ptr->sock, ptr->buf, BUFSIZE, 0);
+					if (retval == SOCKET_ERROR) {
+						err_display("send()");
+						RemoveSocketInfo(i);
+					}
+					continue;
+				}
+				if (chatMsg->type == LIST) {
+					for (j = 0; j < nTotalSockets; j++) {
+						strcpy(chatMsg->buf, get_nickname(j));
+						retval = send(ptr->sock, ptr->buf, BUFSIZE, 0);
+						if (retval == SOCKET_ERROR) {
 							err_display("send()");
-							RemoveSocketInfo(j);
-							--j; // 루프 인덱스 보정
-							continue;
+							RemoveSocketInfo(i);
 						}
 					}
+					continue;
 				}
+
+				if (chatMsg->type == DM) {
+					if (find_nickname(chatMsg->dm_nick) == -1) {
+						memset(chatMsg->dm_nick, 0, 24);
+					}
+
+					retval = send(ptr->sock, ptr->buf, BUFSIZE, 0);
+					if (retval == SOCKET_ERROR) {
+						err_display("send()");
+						RemoveSocketInfo(i);
+					}
+					continue;
+				}
+
+				// 현재 접속한 모든 클라이언트에게 데이터를 보냄!
+				for (j = 0; j<nTotalSockets; j++) {
+					SOCKETINFO *ptr2 = SocketInfoArray[j];
+					retval = send(ptr2->sock, ptr->buf, BUFSIZE, 0);
+					if (retval == SOCKET_ERROR) {
+						err_display("send()");
+						RemoveSocketInfo(j);
+						--j; // 루프 인덱스 보정
+						continue;
+					}
+				}
+
+				//// 받은 바이트 수 누적
+				//ptr->recvbytes += retval;
+
+				//if(ptr->recvbytes == BUFSIZE){
+				//	// 받은 바이트 수 리셋
+				//	ptr->recvbytes = 0;
+
+				//}
 			}
 		}
 	}
@@ -226,6 +244,8 @@ void RemoveSocketInfo(int nIndex)
 		SocketInfoArray[nIndex] = SocketInfoArray[nTotalSockets-1];
 
 	--nTotalSockets;
+
+	remove_nickname(nIndex);
 }
 
 // 소켓 함수 오류 출력 후 종료

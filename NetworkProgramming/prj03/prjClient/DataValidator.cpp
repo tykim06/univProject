@@ -2,6 +2,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <stdio.h>
+#include "DataValidator.h"
 
 bool is_valid_ip(char *ipaddr) {
 	long ip = inet_addr(ipaddr);

@@ -17,6 +17,8 @@
 #define ENTER		1000
 #define CH1			1001
 #define CH2			1002
+#define LIST		1003
+#define DM			1004
 
 // 채팅 메시지 형식
 // sizeof(CHAT_MSG) == 256
@@ -33,10 +35,17 @@ typedef enum {
 	OVERLAP_STATUS_OVERLAPPED,
 	OVERLAP_STATUS_NULL
 } overlap_status_t;
+
+typedef enum {
+	DM_STATUS_NO_MATCH,
+	DM_STATUS_MATCH,
+	DM_STATUS_NULL
+} dm_status_t;
+
 static volatile BOOL g_eNickname; // 통신 시작 여부
+static volatile BOOL g_eDM; // 통신 시작 여부
 static HINSTANCE     g_hInst; // 응용 프로그램 인스턴스 핸들
 static HWND          g_hButtonSendMsg; // '메시지 전송' 버튼
-static HWND          g_hButtonShowList; // '참가자 리스트' 버튼
 static HWND          g_hButtonIsDirect; // '비밀 대화' 버튼
 static HWND          g_hEditStatus; // 받은 메시지 출력
 static HWND          g_hEditStatus_DM; // 받은 DM 메시지 출력
@@ -55,7 +64,7 @@ DWORD WINAPI ClientMain(LPVOID arg);
 DWORD WINAPI ReadThread(LPVOID arg);
 DWORD WINAPI WriteThread(LPVOID arg);
 // 편집 컨트롤 출력 함수
-void DisplayText(int ch, char *fmt, ...);
+void DisplayText(BOOL isDirect, char *fmt, ...);
 // 사용자 정의 데이터 수신 함수
 int recvn(SOCKET s, char *buf, int len, int flags);
 // 오류 출력 함수
@@ -81,6 +90,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	memset(g_chatmsg.nick, 0, sizeof(g_chatmsg.nick));
 	memset(g_chatmsg.dm_nick, 0, sizeof(g_chatmsg.dm_nick));
 	g_eNickname = OVERLAP_STATUS_NULL;
+	g_eDM = DM_STATUS_NULL;
 
 	// 대화상자 생성
 	g_hInst = hInstance;
@@ -103,11 +113,14 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	static HWND hEditPort;
 	static HWND hButtonConnect;
 	static HWND hButtonOverlap;
+	static HWND hButtonShowList;
 	static HWND hEditMsg;
 	static HWND hEditNickname;
 	static HWND hEditDMNickname;
 	static HWND hCH1;
 	static HWND hCH2;
+
+	CHAT_MSG chatMsg;
 
 	switch(uMsg){
 	case WM_INITDIALOG:
@@ -117,8 +130,8 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		hEditPort = GetDlgItem(hDlg, IDC_PORT);
 		hButtonConnect = GetDlgItem(hDlg, IDC_CONNECT2);
 		hButtonOverlap = GetDlgItem(hDlg, IDC_CHECK_OVERLAP);
+		hButtonShowList = GetDlgItem(hDlg, IDC_SHOW_LIST);
 		g_hButtonSendMsg = GetDlgItem(hDlg, IDC_SENDMSG);
-		g_hButtonShowList = GetDlgItem(hDlg, IDC_SHOW_LIST);
 		g_hButtonIsDirect = GetDlgItem(hDlg, IDC_CHECK_DM);
 		hEditMsg = GetDlgItem(hDlg, IDC_MSG);
 		hEditNickname = GetDlgItem(hDlg, IDC_NICKNAME);
@@ -130,30 +143,59 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 		// 컨트롤 초기화
 		SendMessage(hEditMsg, EM_SETLIMITTEXT, MSGSIZE, 0);
-		SendMessage(hEditNickname, EM_SETLIMITTEXT, 20, 0);
-		SendMessage(hEditDMNickname, EM_SETLIMITTEXT, 20, 0);
 		EnableWindow(g_hButtonSendMsg, FALSE);
-		EnableWindow(g_hButtonShowList, FALSE);
+
+		SendMessage(hEditNickname, EM_SETLIMITTEXT, 20, 0);
+		EnableWindow(hButtonShowList, FALSE);
+		EnableWindow(hButtonOverlap, FALSE);
+
+		SendMessage(hEditDMNickname, EM_SETLIMITTEXT, 20, 0);
 		EnableWindow(g_hButtonIsDirect, FALSE);
+
 		SetDlgItemText(hDlg, IDC_IPADDR, SERVERIPV4);
 		SetDlgItemInt(hDlg, IDC_PORT, SERVERPORT, FALSE);
+
 		SendMessage(hCH1, BM_SETCHECK, BST_CHECKED, 0);
 		SendMessage(hCH2, BM_SETCHECK, BST_UNCHECKED, 0);
+		EnableWindow(hCH1, FALSE);
+		EnableWindow(hCH2, FALSE);
 		
 		return TRUE;
 
 	case WM_COMMAND:
 		switch(LOWORD(wParam)){
 		case IDC_CHECK_DM:
-			if (SendMessage(hButtonIsDM, BM_GETCHECK, 0, 0)) {
-				char nickname[20];
-				GetDlgItemText(hDlg, IDC_DM_NICKNAME, nickname, sizeof(nickname));
-				// todo : 상대방 닉네임 유효성 검사
-				strcpy(g_chatmsg.dm_nick, nickname);
+			if (!IsDlgButtonChecked(hDlg, IDC_CHECK_DM)) {
+				memset(g_chatmsg.dm_nick, 0, 24);
+				return TRUE;
+			}
+			GetDlgItemText(hDlg, IDC_DM_NICKNAME, chatMsg.dm_nick, sizeof(chatMsg.dm_nick));
+			if (!is_valid_nickname(chatMsg.dm_nick)) {
+				MessageBox(hDlg, "올바른 상대방 닉네임을 입력해주세요.", "실패!", MB_ICONERROR);
+				CheckDlgButton(hDlg, IDC_CHECK_DM, FALSE);
+				return TRUE;
+			}
+
+			chatMsg.type = DM;
+			// 데이터 보내기
+			if (send(g_sock, (char *)&chatMsg, BUFSIZE, 0) == SOCKET_ERROR) {
+				MessageBox(hDlg, "다시 시도해주세요.", "실패!", MB_ICONERROR);
+				CheckDlgButton(hDlg, IDC_CHECK_DM, FALSE);
+				break;
+			}
+
+			while (g_eDM == DM_STATUS_NULL);
+
+			if (g_eDM == DM_STATUS_NO_MATCH) {
+				MessageBox(hDlg, "존재하지 않는 닉네임 입니다.", "실패!", MB_ICONERROR);
+				CheckDlgButton(hDlg, IDC_CHECK_DM, FALSE);
 			}
 			else {
-				memset(g_chatmsg.dm_nick, 0, sizeof(g_chatmsg.dm_nick));
+				MessageBox(hDlg, "비밀 대화가 시작됩니다.", "성공!", MB_ICONINFORMATION);
 			}
+			g_eDM = DM_STATUS_NULL;
+			strcpy(g_chatmsg.dm_nick, chatMsg.dm_nick);
+
 			return TRUE;
 
 		case IDC_CONNECT2:
@@ -185,32 +227,48 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EnableWindow(hButtonConnect, FALSE);
 				while(g_bStart == FALSE); // 서버 접속 성공 기다림
 
+				EnableWindow(hEditIPaddr, FALSE);
+				EnableWindow(hEditPort, FALSE);
+				EnableWindow(hButtonOverlap, TRUE);
 				SetFocus(hEditNickname);
 			}
 			return TRUE;
 		
 		case IDC_CHECK_OVERLAP:
-			char nickname[24];
-			GetDlgItemText(hDlg, IDC_NICKNAME, nickname, sizeof(nickname));
-			if (!is_valid_nickname(nickname)) {
+			GetDlgItemText(hDlg, IDC_NICKNAME, chatMsg.nick, sizeof(chatMsg.nick));
+			if (!is_valid_nickname(chatMsg.nick)) {
 				MessageBox(hDlg, "올바르지 않은 닉네임 입니다.", "실패!", MB_ICONERROR);
-				return;
+				return TRUE;
 			}
-
-			int retval;
-			strcpy(g_chatmsg.nick, nickname);
+			
+			strcpy(g_chatmsg.nick, chatMsg.nick);
 			EnableWindow(hButtonOverlap, FALSE);
 			// 데이터 보내기
-			retval = send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0);
+			if (send(g_sock, (char *)&g_chatmsg, BUFSIZE, 0) == SOCKET_ERROR) {
+				MessageBox(hDlg, "다시 시도해주세요.", "실패!", MB_ICONERROR);
+				break;
+			}
 			while (g_eNickname == OVERLAP_STATUS_NULL); // 중복 검사 결과 값 기다림
 
-			EnableWindow(hEditIPaddr, FALSE);
-			EnableWindow(hEditPort, FALSE);
+			if (g_eNickname == OVERLAP_STATUS_OVERLAPPED) {
+				MessageBox(hDlg, "사용 불가능한 닉네임 입니다.", "실패!", MB_ICONERROR);
+				EnableWindow(hButtonOverlap, TRUE);
+				SetFocus(hEditNickname);
+				return TRUE;
+			}
+			else {
+				MessageBox(hDlg, "사용 가능한 닉네임 입니다.", "알림", MB_ICONINFORMATION);
+			}
+
 			EnableWindow(g_hButtonSendMsg, TRUE);
-			EnableWindow(g_hButtonShowList, TRUE);
+			EnableWindow(hButtonShowList, TRUE);
 			EnableWindow(g_hButtonIsDirect, TRUE);
+			EnableWindow(hCH1, TRUE);
+			EnableWindow(hCH2, TRUE);
 			SetFocus(hEditMsg);
+			g_chatmsg.type = (IsDlgButtonChecked(hDlg, IDC_CH1)) ? CH1 : CH2;
 			break;
+
 		case IDC_SENDMSG:
 			// 읽기 완료를 기다림
 			WaitForSingleObject(g_hReadEvent, INFINITE);
@@ -222,11 +280,35 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			return TRUE;
 
 		case IDC_CH1:
+			if (g_chatmsg.type == CH1) return TRUE;
 			g_chatmsg.type = CH1;
+			if (MessageBox(hDlg, "닉네임을 변경하시겠습니까?",
+				"질문", MB_YESNO | MB_ICONQUESTION) == IDYES)
+			{
+				g_chatmsg.type = ENTER;
+				EnableWindow(hButtonOverlap, TRUE);
+				EnableWindow(g_hButtonSendMsg, FALSE);
+				EnableWindow(hButtonShowList, FALSE);
+				EnableWindow(g_hButtonIsDirect, FALSE);
+				EnableWindow(hCH1, FALSE);
+				EnableWindow(hCH2, FALSE);
+			}
 			return TRUE;
 
 		case IDC_CH2:
+			if (g_chatmsg.type == CH2) return TRUE;
 			g_chatmsg.type = CH2;
+			if (MessageBox(hDlg, "닉네임을 변경하시겠습니까?",
+				"질문", MB_YESNO | MB_ICONQUESTION) == IDYES)
+			{
+				g_chatmsg.type = ENTER;
+				EnableWindow(hButtonOverlap, TRUE);
+				EnableWindow(g_hButtonSendMsg, FALSE);
+				EnableWindow(hButtonShowList, FALSE);
+				EnableWindow(g_hButtonIsDirect, FALSE);
+				EnableWindow(hCH1, FALSE);
+				EnableWindow(hCH2, FALSE);
+			}
 			return TRUE;
 
 		case IDCANCEL:
@@ -237,6 +319,15 @@ BOOL CALLBACK DlgProc(HWND hDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 				EndDialog(hDlg, IDCANCEL);
 			}
 			return TRUE;
+		case IDC_SHOW_LIST:
+			chatMsg.type = LIST;
+			// 데이터 보내기
+			if (send(g_sock, (char *)&chatMsg, BUFSIZE, 0) == SOCKET_ERROR) {
+				MessageBox(hDlg, "다시 시도해주세요.", "실패!", MB_ICONERROR);
+				break;
+			}
+			DisplayText(FALSE, "\r\n\r\n\t접속중인 유저 목록\r\n");
+			break;
 
 		}
 		return FALSE;
@@ -290,7 +381,7 @@ DWORD WINAPI ClientMain(LPVOID arg)
 
 	g_bStart = FALSE;
 
-	MessageBox(NULL, "서버가 접속을 끊었습니다", "알림", MB_ICONINFORMATION);
+	MessageBox(NULL, "서버가 접속을 끊었습니다.", "알림", MB_ICONINFORMATION);
 	EnableWindow(g_hButtonSendMsg, FALSE);
 
 	closesocket(g_sock);
@@ -311,19 +402,38 @@ DWORD WINAPI ReadThread(LPVOID arg)
 
 		if (chat_msg.type == ENTER) {
 			if (strlen(chat_msg.nick) != 0) {
-				g_eNickname = OVERLAP_STATUS_OVERLAPPED;
+				g_eNickname = OVERLAP_STATUS_NO_OVERLAPPED;
 			}
 			else {
 				g_eNickname = OVERLAP_STATUS_OVERLAPPED;
-			}	
+			}
+			continue;
+		}
+
+		if (chat_msg.type == LIST) {
+			DisplayText(FALSE, "%s\r\n", chat_msg.buf);
+			continue;
+		}
+
+		if (chat_msg.type == DM) {
+			if (strlen(chat_msg.dm_nick) != 0) {
+				g_eDM = DM_STATUS_MATCH;
+			}
+			else {
+				g_eDM = DM_STATUS_NO_MATCH;
+			}
+			continue;
 		}
 
 		if (strlen(chat_msg.dm_nick) != 0) {
-			if (strcmp(g_chatmsg.nick, chat_msg.dm_nick) != 0) continue;
+			if (strcmp(g_chatmsg.nick, chat_msg.dm_nick) == 0
+				|| strcmp(g_chatmsg.nick, chat_msg.nick) == 0)
+				DisplayText(TRUE, "[%s]==> %s\r\n", chat_msg.nick, chat_msg.buf);
+			continue;
 		}
 		if (g_chatmsg.type != chat_msg.type) continue;
 
-		DisplayText(chat_msg.type, "[받은 메시지] %s\r\n", chat_msg.buf);
+		DisplayText(FALSE, "[%s]==> %s\r\n", chat_msg.nick, chat_msg.buf);
 	}
 
 	return 0;
@@ -364,7 +474,7 @@ DWORD WINAPI WriteThread(LPVOID arg)
 }
 
 // 에디트 컨트롤에 문자열 출력
-void DisplayText(int ch, char *fmt, ...)
+void DisplayText(BOOL isDirect, char *fmt, ...)
 {
 	va_list arg;
 	va_start(arg, fmt);
@@ -373,7 +483,7 @@ void DisplayText(int ch, char *fmt, ...)
 	vsprintf(cbuf, fmt, arg);
 
 	int nLength;
-	if (ch == CH1) {
+	if (!isDirect) {
 		nLength = GetWindowTextLength(g_hEditStatus);
 		SendMessage(g_hEditStatus, EM_SETSEL, nLength, nLength);
 		SendMessage(g_hEditStatus, EM_REPLACESEL, FALSE, (LPARAM)cbuf);
